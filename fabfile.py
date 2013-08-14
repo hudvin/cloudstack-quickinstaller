@@ -90,3 +90,88 @@ def setup_host():
     files.append('/etc/sysconfig/libvirtd','LIBVIRTD_ARGS="--listen"', use_sudo=True)
     sudo('service libvirtd restart')
 
+
+
+eth0_body="""
+DEVICE=eth0
+HWADDR=F0:DE:F1:A0:0E:D4 
+ONBOOT=yes
+HOTPLUG=no
+BOOTPROTO=none
+TYPE=Ethernet
+"""
+eth0.100_body="""
+DEVICE=eth0.100
+HWADDR=F0:DE:F1:A0:0E:D4
+ONBOOT=yes
+HOTPLUG=no
+BOOTPROTO=none
+TYPE=Ethernet
+VLAN=yes
+IPADDR=192.168.0.120
+GATEWAY=192.168.0.1
+NETMASK=255.255.255.0
+"""
+eth0.200_body="""
+DEVICE=eth0.200
+HWADDR=F0:DE:F1:A0:0E:D4
+ONBOOT=yes
+HOTPLUG=no
+BOOTPROTO=none
+TYPE=Ethernet
+VLAN=yes
+BRIDGE=cloudbr0
+"""
+
+eth0.300_body="""
+DEVICE=eth0.300
+HWADDR=F0:DE:F1:A0:0E:D4
+ONBOOT=yes
+HOTPLUG=no
+BOOTPROTO=none
+TYPE=Ethernet
+VLAN=yes
+BRIDGE=cloudbr1
+"""
+
+cloudbr0_body="""
+DEVICE=cloudbr0
+TYPE=Bridge
+ONBOOT=yes
+BOOTPROTO=none
+IPV6INIT=no
+IPV6_AUTOCONF=no
+DELAY=5
+STP=yes
+"""
+
+cloudbr0_body="""
+DEVICE=cloudbr1
+TYPE=Bridge
+ONBOOT=yes
+BOOTPROTO=none
+IPV6INIT=no
+IPV6_AUTOCONF=no
+DELAY=5
+STP=yes
+"""
+
+
+def setup_eth():
+    eth0_path = '/etc/sysconfig/network-scripts/ifcfg-eth0'
+    eth0.100_path = '/etc/sysconfig/network-scripts/ifcfg-eth0.100'
+    eth0.200_path = '/etc/sysconfig/network-scripts/ifcfg-eth0.200'
+    eth0.300_path = '/etc/sysconfig/network-scripts/ifcfg-eth0.300'
+    cloudbr0_path = '/etc/sysconfig/network-scripts/ifcfg-cloudbr0' 
+    cloudbr1_path = '/etc/sysconfig/network-scripts/ifcfg-cloudbr1'
+    #append
+    files.append(eth0_path, eth0_body, use_sudo=True)
+    files.append(eth0.100_path, eth0.100_body, use_sudo=True)
+    files.append(eth0.200_path, eth0.200_body, use_sudo=True)
+    files.append(eth0.300_path, eth0.300_body, use_sudo=True)
+    files.append(cloudbr0_path, cloudbr0_body, use_sudo=True)
+    files.append(cloudbr1_path, cloudbr1_body, use_sudo=True)
+    sudo('rm /etc/udev/rules.d/70-persistent-net.rules')
+    sudo('reboot')
+    
+
