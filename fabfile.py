@@ -58,8 +58,16 @@ tcp_port = "16509"
 auth_tcp = "none"
 mdns_adv = 0"""
 
+
 repo_file = '/etc/yum.repos.d/cloudstack.repo'
 my_cnf_file = '/etc/my.cnf'
+
+ip_addr = ''
+dns = ''
+gateway = ''
+netmask = ''
+hw_addr = ''
+ 
 
 def start_local_ssh():
     sudo('service sshd start')
@@ -84,7 +92,6 @@ def add_repo():
 def configure_system():
     sudo('rm /etc/my.cnf')
     files.append(my_cnf_file, my_cnf_body, use_sudo=True)
-    sudo('service mysqld restart')
     files.comment('/etc/selinux/config','SELINUX=enforcing',use_sudo=True)
     files.append('/etc/selinux/config','SELINUX=permissive', use_sudo=True)
     sudo("setenforce permissive")
@@ -94,8 +101,9 @@ def configure_system():
 
 
 def configure_cs():
+    sudo('service mysqld start')
     sudo('mysql_secure_installation')
-    sudo("cloudstack-setup-databases cloud:qwerty@localhost \--deploy-as=root:qwerty ")
+    sudo("cloudstack-setup-databases cloud:qwerty@localhost \--deploy-as=root:qwerty -i %s"%ip_addr)
     sudo('cloudstack-setup-management')
 
 def start_all():
@@ -117,7 +125,7 @@ def stop_all():
 
 def restart_network():
     sudo('service network restart')
-
+    run('ping 8.8.8.8 -c 5')
 def configure_nfs():
     sudo('mkdir -p /export/primary')
     sudo('mkdir -p /export/secondary')
@@ -140,15 +148,25 @@ def drop_dbs():
     mysql_username = 'root'
     mysql_password  = prompt("What is mysql password?")
     cs_dbs = ['cloud','cloud_usage','cloudbridge']
-    run('mysqladmin -u%s -p%s drop %s'%(mysql_username, mysql_password, db))
+    for db in cs_dbs:
+        run('mysqladmin -u%s -p%s drop %s'%(mysql_username, mysql_password, db))
 
-def setup_eth():
-    #for eth0 (for my network)
+def grub_network_params():
+    global ip_addr, dns, gateway, netmask, hw_addr
     ip_addr = prompt('Enter IP address of eth0:', default = '192.168.0.115')
     dns = prompt('Enter DNS:',default = '8.8.8.8')
     gateway = prompt('Enter Gateway:', default = '192.168.0.1')
     netmask = prompt('Enter Netmask:', default = '255.255.255.0') 
     hw_addr = run('ifconfig eth0 | awk \'/HWaddr/ {print $5}\'')
+ 
+
+def configure_eth():
+    #for eth0 (for my network)
+    #ip_addr = prompt('Enter IP address of eth0:', default = '192.168.0.115')
+    #dns = prompt('Enter DNS:',default = '8.8.8.8')
+    #gateway = prompt('Enter Gateway:', default = '192.168.0.1')
+    #netmask = prompt('Enter Netmask:', default = '255.255.255.0') 
+    #hw_addr = run('ifconfig eth0 | awk \'/HWaddr/ {print $5}\'')
     #path to configs
     eth0_path = '/etc/sysconfig/network-scripts/ifcfg-eth0'
     cloudbr0_path = '/etc/sysconfig/network-scripts/ifcfg-cloudbr0' 
@@ -168,9 +186,33 @@ def setup_eth():
     #    files.append(eth0_path, eth0_body%hw_addr, use_sudo=True, escape=False)
     #if not files.contains(cloudbr0_path, cloudbr0_body%hw_addr,escape=False): 
     #    files.append(cloudbr0_path, cloudbr0_body%hw_addr, use_sudo=True, escape=False)
-    #sudo('rm /etc/udev/rules.d/70-persistent-net.rules')
+    sudo('rm /etc/udev/rules.d/70-persistent-net.rules')
     confirm = prompt('Do you want to reboot right now(y/N)?')
     if confirm == 'y':
         sudo('reboot')
     else:
         print 'Please, reboot system to apply changes!'
+
+def configure iptables():
+    pass
+
+
+def remove_all():
+    stop_all()
+    remove_cs()
+    clean_dirs() 
+
+
+def install_all():
+    grub_network_params()    
+    add_repo()
+    install_mysql()
+    drop_dbs()
+    install_other()
+    install_cs()
+    configure_eth()
+    restart_network()
+    configure_cs()
+    configure_nfs()
+    download_system_vm()
+    start_all()
