@@ -1,17 +1,16 @@
 from fabric.api import *
 from fabric.contrib import *
-print 'hello'
 env.hosts = ['127.0.0.1']
+env.warn_only = True
+
 repo_body = """
 [cloudstack]
 name=cloudstack
 baseurl=http://cloudstack.apt-get.eu/rhel/4.1/
 enabled=1
-gpgcheck=0
-"""
+gpgcheck=0"""
 
-my_cnf_body = """
-[mysqld]
+my_cnf_body = """[mysqld]
 innodb_rollback_on_timeout=1
 innodb_lock_wait_timeout=600
 max_connections=350
@@ -23,158 +22,155 @@ symbolic-links=0
 
 [mysqld_safe]
 log-error=/var/log/mysqld.log
-pid-file=/var/run/mysqld/mysqld.pid
-"""
+pid-file=/var/run/mysqld/mysqld.pid"""
 
-repo_file = '/etc/yum.repos.d/cloudstack.repo'
-my_cnf_file = '/etc/my.cnf'
+eth0_body="""DEVICE=eth0
+HWADDR=%s
+ONBOOT=yes
+BOOTPROTO=none
+TYPE=Ethernet
+BRIDGE=cloudbr0"""
 
-def hello():
-    files.append(repo_file, repo_body, use_sudo=True)
-    run('hostname --fqdn')
-    sudo('yum install ntp') 
-    sudo('yum install cloudstack-management')
-    sudo('yum install cloudstack-agent')
-    sudo('yum install mysql-server')
-    sudo('rm /etc/my.cnf')
-    files.append(my_cnf_file, my_cnf_body, use_sudo=True)
-    sudo('service mysqld restart')
-    sudo('mysql_secure_installation')
-    files.comment('/etc/selinux/config','SELINUX=enforcing',use_sudo=True)
-    files.append('/etc/selinux/config','SELINUX=permissive', use_sudo=True)
-    sudo("setenforce permissive")
-    sudo("cloudstack-setup-databases cloud:qwerty@localhost \--deploy-as=root:qwerty ")
-    files.append('/etc/sudoers','Defaults:cloud !requiretty', use_sudo=True)
-    sudo('cloudstack-setup-management')
+cloudbr0_body="""DEVICE=cloudbr0
+HWADDR=%s
+TYPE=Bridge
+ONBOOT=yes
+BOOTPROTO=none
+IPADDR=%s
+NETMASK=%s
+GATEWAY=%s
+DNS1=%s
+IPV6INIT=no
+IPV6_AUTOCONF=no
+DELAY=0
+STP=yes"""
 
-
-nfs_sysconfig = """
-LOCKD_TCPPORT=32803
+nfs_sysconfig = """LOCKD_TCPPORT=32803
 LOCKD_UDPPORT=32769
 MOUNTD_PORT=892
 RQUOTAD_PORT=875
 STATD_PORT=662
-STATD_OUTGOING_PORT=2020
-"""
+STATD_OUTGOING_PORT=2020"""
 
-def setup_nfs():
+libvirtd_conf_body = """listen_tls = 0
+listen_tcp = 1
+tcp_port = "16509"
+auth_tcp = "none"
+mdns_adv = 0"""
+
+repo_file = '/etc/yum.repos.d/cloudstack.repo'
+my_cnf_file = '/etc/my.cnf'
+
+def start_local_ssh():
+    sudo('service sshd start')
+
+def install_cs():
+    sudo('yum install cloudstack-management')
+    sudo('yum install cloudstack-agent')
+
+def install_mysql():
+    sudo('yum install mysql-server')
+
+def install_other():
+    sudo('yum install ntp')
     sudo("yum install nfs-utils")
+
+def check_fqdn():
+    run('hostname --fqdn')
+
+def add_repo():
+     files.append(repo_file, repo_body, use_sudo=True)
+
+def configure_system():
+    sudo('rm /etc/my.cnf')
+    files.append(my_cnf_file, my_cnf_body, use_sudo=True)
+    sudo('service mysqld restart')
+    files.comment('/etc/selinux/config','SELINUX=enforcing',use_sudo=True)
+    files.append('/etc/selinux/config','SELINUX=permissive', use_sudo=True)
+    sudo("setenforce permissive")
+    files.append('/etc/sudoers','Defaults:cloud !requiretty', use_sudo=True)
+    files.append('/etc/libvirt/libvirtd.conf', libvirtd_conf_body, use_sudo=True)
+    files.append('/etc/sysconfig/libvirtd','LIBVIRTD_ARGS="--listen"', use_sudo=True)
+
+
+def configure_cs():
+    sudo('mysql_secure_installation')
+    sudo("cloudstack-setup-databases cloud:qwerty@localhost \--deploy-as=root:qwerty ")
+    sudo('cloudstack-setup-management')
+
+def start_all():
+    sudo('service mysqld start')
+    sudo('service cloudstack-agent start')
+    sudo('service cloudstack-management start')
+    sudo('service rpcbind start')
+    sudo('service nfs start')
+    sudo('service libvirtd start')
+
+
+def stop_all():
+    sudo('service mysqld stop')
+    sudo('service cloudstack-agent stop')
+    sudo('service cloudstack-management stop')
+    sudo('service rpcbind stop')
+    sudo('service nfs stop')
+    sudo('service libvirtd stop')
+
+def restart_network():
+    sudo('service network restart')
+
+def configure_nfs():
     sudo('mkdir -p /export/primary')
     sudo('mkdir -p /export/secondary')
     files.append('/etc/exports','/export  *(rw,async,no_root_squash)', use_sudo=True)
     sudo('exportfs -a')
     files.append('/etc/sysconfig/nfs', nfs_sysconfig, use_sudo=True)
-    #sudo('service iptables stop')
     files.append('/etc/idmapd.conf', 'Domain=localhost.localdomain', use_sudo=True)
-    sudo('service rpcbind start')
-    sudo('service nfs start')
-#    sudo('mkdir -p /mnt/primary')
-    #sudo('mkdir -p /mnt/secondary')
-#   # sudo('mount -t nfs 127.0.0.1:/export/primary /mnt/primary')
-#    sudo('mount -t nfs 127.0.0.1:/export/secondary /mnt/secondary') 
+    
 
 def download_system_vm():
     sudo('/usr/share/cloudstack-common/scripts/storage/secondary/cloud-install-sys-tmplt -m /export/secondary -u http://download.cloud.com/templates/acton/acton-systemvm-02062012.qcow2.bz2 -h kvm  -F')
 
-libvirtd_conf_body = """
-listen_tls = 0
-listen_tcp = 1
-tcp_port = "16509"
-auth_tcp = "none"
-mdns_adv = 0
+def remove_cs():
+    sudo('yum remove cloudstack-management cloudstack-agent')
 
-"""
+def clean_dirs():
+    run('rm /export/ -rf')
 
-def setup_host():
-    files.append('/etc/libvirt/libvirtd.conf', libvirtd_conf_body, use_sudo=True)
-    files.append('/etc/sysconfig/libvirtd','LIBVIRTD_ARGS="--listen"', use_sudo=True)
-    sudo('service libvirtd restart')
-
-
-
-eth0_body="""
-DEVICE=eth0
-HWADDR=F0:DE:F1:A0:0E:D4 
-ONBOOT=yes
-HOTPLUG=no
-BOOTPROTO=none
-TYPE=Ethernet
-"""
-eth0_100_body="""
-DEVICE=eth0.100
-HWADDR=F0:DE:F1:A0:0E:D4
-ONBOOT=yes
-HOTPLUG=no
-BOOTPROTO=none
-TYPE=Ethernet
-VLAN=yes
-IPADDR=192.168.0.120
-GATEWAY=192.168.0.1
-NETMASK=255.255.255.0
-"""
-eth0_200_body="""
-DEVICE=eth0.200
-HWADDR=F0:DE:F1:A0:0E:D4
-ONBOOT=yes
-HOTPLUG=no
-BOOTPROTO=none
-TYPE=Ethernet
-VLAN=yes
-BRIDGE=cloudbr0
-"""
-
-eth0_300_body="""
-DEVICE=eth0.300
-HWADDR=F0:DE:F1:A0:0E:D4
-ONBOOT=yes
-HOTPLUG=no
-BOOTPROTO=none
-TYPE=Ethernet
-VLAN=yes
-BRIDGE=cloudbr1
-"""
-
-cloudbr0_body="""
-DEVICE=cloudbr0
-TYPE=Bridge
-ONBOOT=yes
-BOOTPROTO=none
-IPV6INIT=no
-IPV6_AUTOCONF=no
-DELAY=5
-STP=yes
-"""
-
-cloudbr1_body="""
-DEVICE=cloudbr1
-TYPE=Bridge
-ONBOOT=yes
-BOOTPROTO=none
-IPV6INIT=no
-IPV6_AUTOCONF=no
-DELAY=5
-STP=yes
-"""
-
+def drop_dbs():
+    mysql_username = 'root'
+    mysql_password  = prompt("What is mysql password?")
+    cs_dbs = ['cloud','cloud_usage','cloudbridge']
+    run('mysqladmin -u%s -p%s drop %s'%(mysql_username, mysql_password, db))
 
 def setup_eth():
+    #for eth0 (for my network)
+    ip_addr = prompt('Enter IP address of eth0:', default = '192.168.0.115')
+    dns = prompt('Enter DNS:',default = '8.8.8.8')
+    gateway = prompt('Enter Gateway:', default = '192.168.0.1')
+    netmask = prompt('Enter Netmask:', default = '255.255.255.0') 
+    hw_addr = run('ifconfig eth0 | awk \'/HWaddr/ {print $5}\'')
+    #path to configs
     eth0_path = '/etc/sysconfig/network-scripts/ifcfg-eth0'
-    eth0_100_path = '/etc/sysconfig/network-scripts/ifcfg-eth0.100'
-    eth0_200_path = '/etc/sysconfig/network-scripts/ifcfg-eth0.200'
-    eth0_300_path = '/etc/sysconfig/network-scripts/ifcfg-eth0.300'
     cloudbr0_path = '/etc/sysconfig/network-scripts/ifcfg-cloudbr0' 
-    cloudbr1_path = '/etc/sysconfig/network-scripts/ifcfg-cloudbr1'
-    #append
-    files.append(eth0_path, eth0_body, use_sudo=True)
-    files.append(eth0_100_path, eth0_100_body, use_sudo=True)
-    files.append(eth0_200_path, eth0_200_body, use_sudo=True)
-    files.append(eth0_300_path, eth0_300_body, use_sudo=True)
-    files.append(cloudbr0_path, cloudbr0_body, use_sudo=True)
-    files.append(cloudbr1_path, cloudbr1_body, use_sudo=True)
-    sudo('rm /etc/udev/rules.d/70-persistent-net.rules')
-    sudo('reboot')
+    #make backup
+    from time import gmtime, strftime
+    now = strftime("%Y-%m-%d_%H:%M:%S", gmtime())
+    print 'making backup'
+    sudo('cp %s %s' %(eth0_path,eth0_path+'.'+now))
+    sudo('cp %s %s' %(cloudbr0_path,cloudbr0_path+'.'+now))
+    #remove and create new
+    sudo('rm %s'%eth0_path)
+    sudo('rm %s'%cloudbr0_path)
+    files.append(eth0_path, eth0_body%hw_addr, use_sudo=True)
+    files.append(cloudbr0_path, cloudbr0_body%(hw_addr,ip_addr, netmask, gateway, dns), use_sudo=True)
     
-
-
-def setup_iptables():
-    pass	
+    #if not files.contains(eth0_path, eth0_body%hw_addr,escape=False):
+    #    files.append(eth0_path, eth0_body%hw_addr, use_sudo=True, escape=False)
+    #if not files.contains(cloudbr0_path, cloudbr0_body%hw_addr,escape=False): 
+    #    files.append(cloudbr0_path, cloudbr0_body%hw_addr, use_sudo=True, escape=False)
+    #sudo('rm /etc/udev/rules.d/70-persistent-net.rules')
+    confirm = prompt('Do you want to reboot right now(y/N)?')
+    if confirm == 'y':
+        sudo('reboot')
+    else:
+        print 'Please, reboot system to apply changes!'
