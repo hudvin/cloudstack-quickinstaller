@@ -193,7 +193,7 @@ def configure_eth():
     else:
         print 'Please, reboot system to apply changes!'
 
-def configure iptables():
+def configure_iptables():
     pass
 
 
