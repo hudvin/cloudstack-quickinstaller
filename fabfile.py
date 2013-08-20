@@ -107,6 +107,7 @@ def configure_cs():
     sudo('cloudstack-setup-management')
 
 def start_all():
+    sudo('cloudstack-setup-management')
     sudo('service mysqld start')
     sudo('service cloudstack-agent start')
     sudo('service cloudstack-management start')
@@ -145,6 +146,7 @@ def clean_dirs():
     run('rm /export/ -rf')
 
 def drop_dbs():
+    sudo('service mysqld start')
     mysql_username = 'root'
     mysql_password  = prompt("What is mysql password?")
     cs_dbs = ['cloud','cloud_usage','cloudbridge']
